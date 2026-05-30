@@ -20,8 +20,9 @@ jobs:
           fetch-depth: 0
       - id: check
         run: |
-          # when called from deploy.yml, always run both
-          if [ "${{ github.event_name }}" = "workflow_call" ]; then
+          # only diff on pull_request — for push/workflow_call the caller
+          # already filtered paths, so always run both
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "extension=true" >> $GITHUB_OUTPUT
             echo "service=true" >> $GITHUB_OUTPUT
             exit 0

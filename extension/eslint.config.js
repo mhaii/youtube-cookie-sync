@@ -4,19 +4,21 @@ const js = require('@eslint/js');
 const globals = require('globals');
 const eslintConfigPrettier = require('eslint-config-prettier');
 
-const extensionFiles = ['**/*.js'];
-
 module.exports = [
   {
+    ignores: ['eslint.config.js', 'node_modules/**'],
+  },
+  {
     ...js.configs.recommended,
-    files: extensionFiles,
+    files: ['**/*.js'],
   },
   {
     ...eslintConfigPrettier,
-    files: extensionFiles,
+    files: ['**/*.js'],
   },
   {
-    files: extensionFiles,
+    files: ['**/*.js'],
+    ignores: ['**/__tests__/**/*.js'],
     languageOptions: {
       ecmaVersion: 2020,
       sourceType: 'script',
@@ -25,6 +27,7 @@ module.exports = [
         ...globals.es2020,
         browser: 'readonly',
         chrome: 'readonly',
+        module: 'readonly',
       },
     },
     rules: {
@@ -35,6 +38,20 @@ module.exports = [
       'no-var': 'error',
       'no-func-assign': 'off',
       'no-inner-declarations': 'off',
+    },
+  },
+  {
+    files: ['**/__tests__/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      sourceType: 'commonjs',
+      globals: {
+        ...globals.node,
+        ...globals.jest,
+      },
+    },
+    rules: {
+      strict: 'off',
     },
   },
 ];

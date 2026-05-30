@@ -6,8 +6,9 @@ on:
     paths:
       - 'extension/**'
       - 'service/**'
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
+  release:
+    types: [created]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -32,8 +33,8 @@ jobs:
         id: tags
         run: |
           IMAGE_LC=$(echo "${{ env.IMAGE }}" | tr '[:upper:]' '[:lower:]')
-          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
-            VERSION="${{ github.ref_name }}"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
             echo "tags=${IMAGE_LC}:${VERSION},${IMAGE_LC}:latest" >> $GITHUB_OUTPUT
           else
             echo "tags=${IMAGE_LC}:edge" >> $GITHUB_OUTPUT
@@ -52,21 +53,21 @@ jobs:
           context: service
           push: true
           tags: ${{ steps.tags.outputs.tags }}
-          platforms: ${{ startsWith(github.ref, 'refs/tags/') && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          platforms: ${{ github.event_name == 'release' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   release-extension:
     name: release extension
     needs: ci
-    if: startsWith(github.ref, 'refs/tags/')
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - name: Build extension zips
         run: |
-          VERSION="${{ github.ref_name }}"
+          VERSION="${{ github.event.release.tag_name }}"
           mkdir -p release
           cd extension
 
@@ -84,21 +85,19 @@ jobs:
             -x eslint.config.js -x deploy.sh -x "__tests__/*"
           rm manifest.json
 
-      - name: Create GitHub release
+      - name: Upload zips to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION="${{ github.ref_name }}"
-          gh release create "$VERSION" \
-            --title "$VERSION" \
-            --generate-notes \
+          VERSION="${{ github.event.release.tag_name }}"
+          gh release upload "$VERSION" \
             release/cookie-sync-${VERSION}-firefox.zip \
             release/cookie-sync-${VERSION}-chrome.zip
 
       - name: Publish to Chrome Web Store
         uses: fregante/chrome-webstore-upload-action@v2
         with:
-          file-name: release/cookie-sync-${{ github.ref_name }}-chrome.zip
+          file-name: release/cookie-sync-${{ github.event.release.tag_name }}-chrome.zip
           extension-id: ${{ secrets.CHROME_EXTENSION_ID }}
           client-id: ${{ secrets.CHROME_CLIENT_ID }}
           client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
@@ -108,7 +107,7 @@ jobs:
         uses: trmcnvn/firefox-addon@v1
         with:
           uuid: ${{ secrets.AMO_EXTENSION_UUID }}
-          xpi: release/cookie-sync-${{ github.ref_name }}-firefox.zip
+          xpi: release/cookie-sync-${{ github.event.release.tag_name }}-firefox.zip
           manifest: extension/manifest-firefox.json
           api-key: ${{ secrets.AMO_JWT_ISSUER }}
           api-secret: ${{ secrets.AMO_JWT_SECRET }}

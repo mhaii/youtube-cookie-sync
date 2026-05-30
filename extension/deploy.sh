@@ -33,7 +33,7 @@ zip -rq ../release/cookie-sync-"$VERSION"-chrome.zip . \
     -x eslint.config.js -x deploy.sh
 rm manifest.json
 
-git tag -a "$VERSION" -m "release $VERSION"
-git push origin "$VERSION"
+#git tag -a "$VERSION" -m "release $VERSION"
+#git push origin "$VERSION"
 
 echo "Released $VERSION"

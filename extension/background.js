@@ -48,8 +48,7 @@ async function encryptCookies(plaintext, psk) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const encoded = new TextEncoder().encode(plaintext);
   const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
-  const toBase64 = buf =>
-    btoa(String.fromCharCode(...new Uint8Array(buf)));
+  const toBase64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
   return {
     iv: toBase64(iv),
     data: toBase64(ciphertext),
