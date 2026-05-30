@@ -1,0 +1,76 @@
+name: ci
+
+on:
+  pull_request:
+    paths:
+      - 'extension/**'
+      - 'service/**'
+  workflow_call:
+
+jobs:
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      extension: ${{ steps.check.outputs.extension }}
+      service: ${{ steps.check.outputs.service }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          # when called from deploy.yml, always run both
+          if [ "${{ github.event_name }}" = "workflow_call" ]; then
+            echo "extension=true" >> $GITHUB_OUTPUT
+            echo "service=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          git diff --name-only \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.sha }}" > changed_files.txt
+
+          grep -q '^extension/' changed_files.txt \
+            && echo "extension=true" >> $GITHUB_OUTPUT \
+            || echo "extension=false" >> $GITHUB_OUTPUT
+
+          grep -q '^service/' changed_files.txt \
+            && echo "service=true" >> $GITHUB_OUTPUT \
+            || echo "service=false" >> $GITHUB_OUTPUT
+
+  extension:
+    name: extension
+    needs: changes
+    if: needs.changes.outputs.extension == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx prettier --check '**/*.js' --ignore-path .gitignore
+      - run: npm test
+
+  service:
+    name: service
+    needs: changes
+    if: needs.changes.outputs.service == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: service/go.mod
+          cache-dependency-path: service/go.sum
+      - run: go test -v ./...

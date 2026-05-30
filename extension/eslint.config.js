@@ -4,7 +4,7 @@ const js = require('@eslint/js');
 const globals = require('globals');
 const eslintConfigPrettier = require('eslint-config-prettier');
 
-const extensionFiles = ['extension/**/*.js'];
+const extensionFiles = ['**/*.js'];
 
 module.exports = [
   {

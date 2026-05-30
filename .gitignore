@@ -1,8 +1,18 @@
-# linked or copied real manifest
+# Extension
 extension/manifest.json
+extension/node_modules/
+extension/release/
 
-# release builds
-release/*
+# Go
+service/cookie-sync
 
-# JavaScript stuff
-node_modules
+# Env
+.env
+*.env
+
+# OS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

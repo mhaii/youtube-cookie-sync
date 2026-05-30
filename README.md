@@ -1,69 +1,104 @@
-![Tube Archivist Companion](assets/tube-archivist-companion-banner.png?raw=true "Tube Archivist Companion Banner")  
+# YouTube Cookie Sync
 
-<h1 align="center">Browser Extension for Tube Archivist</h1>
-<div align="center">
-<a href="https://addons.mozilla.org/addon/tubearchivist-companion/" target="_blank"><img src="https://tiles.tilefy.me/t/tubearchivist-firefox.png" alt="tubearchivist-firefox" title="TA Companion Firefox users" height="50" width="190"/></a>
-<a href="https://chrome.google.com/webstore/detail/tubearchivist-companion/jjnkmicfnfojkkgobdfeieblocadmcie" target="_blank"><img src="https://tiles.tilefy.me/t/tubearchivist-chrome.png" alt="tubearchivist-chrome" title="TA Companion Chrome users" height="50" width="190"/></a>
-</div>
+A browser extension (Chrome + Firefox) that syncs your YouTube session cookies to a self-hosted HTTP service, which writes them to a file. Useful for tools like yt-dlp that need authenticated cookies to access age-restricted or member-only content.
 
-## Screenshots
-![popup screenshot](assets/tac-screenshot.png?raw=true "Tube Archivist Companion Popup")
-Popup to enter your connection details.
-<br><br>
+Cookies are encrypted with AES-256-GCM using a pre-shared key before being sent, so the service endpoint can be exposed over a network without transmitting plaintext credentials.
 
-![video page](assets/screenshot-video.png?raw=true "Tube Archivist Companion Video Page")
-Button injected on video page to download the video or subscribe to the channel.
-<br><br>
+## How it works
 
-![search page](assets/tac-screenshot-search.jpg?raw=true "Tube Archivist Companion Search Page")
-Download button injected showing when hovering over the video title.
-<br><br>
+1. The extension reads YouTube cookies from your browser
+2. Encrypts them with a PSK (AES-256-GCM, PBKDF2 key derivation)
+3. POSTs the encrypted payload to your configured endpoint
+4. The service decrypts and writes a Netscape-format cookie file
 
-![channel page](assets/tac-screenshot-channel.jpg?raw=true "Tube Archivist Companion Channel Page")
-Channel button injected to subscribe or download whole channel, video download button showing when hovering over the video title.
-<br>
+Sync happens automatically whenever cookies change (throttled to once per 10s), or manually on demand.
 
-## Install
-- Firefox: The addon is available on the [Extension store](https://addons.mozilla.org/addon/tubearchivist-companion/).
-- Chrome: The addon is available on the [Chrome Web Store](https://chrome.google.com/webstore/detail/tubearchivist-companion/jjnkmicfnfojkkgobdfeieblocadmcie).
+## Extension
 
-## Docs
-User documentation is available on the official documentation page: [https://docs.tubearchivist.com/browser-extension/user-docs/](https://docs.tubearchivist.com/browser-extension/user-docs/).
+### Install
 
-This documentation is built from a separate repo at [tubearchivist/docs](https://github.com/tubearchivist/docs).
+- Firefox: [Firefox Add-ons](#) *(link once published)*
+- Chrome: [Chrome Web Store](#) *(link once published)*
 
-## Dev setup
-Before continuing loading the temporary extension here, make sure to deactivate/delete the main extension first.
+### Setup
 
-Symlink/copy the correct manifest file for your browser to the expected location, e.g. `ln -s manifest-firefox.json manifest.json`.
+1. Install the extension
+2. Open the popup and enter your service endpoint URL (e.g. `http://localhost:8080`)
+3. Copy the auto-generated PSK — you'll need it for the service
+4. Click **Save**, then **Sync Now** to verify
 
-- Firefox
-  - Open `about:debugging#/runtime/this-firefox`
-  - Click on *Load Temporary Add-on*
-  - Select the *manifest.json* file to load the addon.
-  - You can *inspect* background.js by lunching the debug tools from there.
-- Chrome / Chromium
-  - Open `chrome://extensions/`
-  - Toggle *Developer mode* on top right
-  - Click on *Load unpacked*
-  - Open the folder containing the *manifest.json* file.
-  - Click on *Service Worker* to open the dev tools at background.js. 
+Enable **Continuous Sync** to automatically re-sync whenever YouTube cookies change.
 
-Note:
-- If you are running your TA dev setup outside of the container, you need to point the URL to the API backend and _not_ the frontend. E.g. localhost:8000 and not localhost:3000.
+### Dev setup
 
-## Roadmap
-Join us on [Discord](https://www.tubearchivist.com/discord) and help us improve and extend this project. This is a list of planned features, in no particular order:
-- [ ] Implement download/subscribe button for playlists
-- [ ] Add download buttons to the `/shorts/` pages
-- [X] Get download and subscribe status from TA to show on the injected buttons
-- [X] Implement download button for videos on the YouTube homepage over inline preview
-- [X] Implement download button for videos on playlist
-- [X] Error handling for connection errors
-- [X] Dynamically inject buttons with mutation observer
+Deactivate the installed extension first, then load it unpacked:
 
-## Making changes to the JavaScript
-The JavaScript does not require any build step; you just edit the files directly. However, there is config for eslint and prettier (a linter and formatter respectively); their use is recommended but not required. To use them, install `node`, run `npm i` from the root directory of this repository to install dependencies, then run `npm run lint` and `npm run format` to run eslint and prettier respectively.
+**Firefox**
+```
+about:debugging#/runtime/this-firefox → Load Temporary Add-on → select extension/manifest.json
+```
 
-## Updating Artwork
-Google listing is *very* picky. Screenshots need to be exactly **1280x800** in resolution and need to be in *jpg* or *png* without alpha channel.
+**Chrome**
+```
+chrome://extensions → Developer mode → Load unpacked → select the extension/ folder
+```
+
+Symlink the correct manifest before loading:
+```bash
+cd extension
+ln -s manifest-firefox.json manifest.json   # Firefox
+ln -s manifest-chrome.json manifest.json    # Chrome
+```
+
+**Lint and test:**
+```bash
+cd extension
+npm install
+npm run lint
+npm test
+```
+
+## Service
+
+A small Go HTTP server that decrypts the incoming payload and writes the cookie file.
+
+### Run with Docker
+
+```bash
+docker run -d \
+  -e PSK=your-psk-here \
+  -e COOKIE_FILE=/data/cookies.txt \
+  -p 8080:8080 \
+  -v /path/to/data:/data \
+  ghcr.io/<owner>/youtube-cookie-sync:latest
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `PSK` | — | **Required.** Must match the PSK set in the extension |
+| `COOKIE_FILE` | `./cookies.txt` | Path where the cookie file is written |
+| `HOST` | `0.0.0.0` | Bind address |
+| `PORT` | `8080` | Bind port |
+
+### Build from source
+
+```bash
+cd service
+go build -o cookie-sync .
+PSK=your-psk COOKIE_FILE=/tmp/cookies.txt ./cookie-sync
+```
+
+### Run tests
+
+```bash
+cd service
+go test -v ./...
+```
+
+## Encryption
+
+- Key derivation: PBKDF2-HMAC-SHA256, 100,000 iterations, fixed salt `youtube-cookie-sync-v1`
+- Encryption: AES-256-GCM with a random 12-byte IV per message
+- Wire format: `POST /cookie` with JSON body `{ "iv": "<base64>", "data": "<base64 ciphertext+tag>" }`

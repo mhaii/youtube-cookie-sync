@@ -1,8 +1,8 @@
 {
     "manifest_version": 2,
-    "name": "TubeArchivist Companion",
-    "description": "Interact with your selfhosted TA server.",
-    "version": "0.5.0",
+    "name": "YouTube Cookie Sync",
+    "description": "Continuously sync YouTube cookies to a self-hosted endpoint.",
+    "version": "1.0.0",
     "icons": {
         "128": "/images/icon128.png"
     },
@@ -15,13 +15,20 @@
         "cookies",
         "https://*.youtube.com/*"
     ],
-    "content_scripts": [
-        {
-            "matches": ["https://www.youtube.com/*"],
-            "js": ["script.js"]
-        }
-    ],
     "background": {
         "scripts": ["background.js"]
+    },
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "youtube-cookie-sync@mhaii",
+            "strict_min_version": "140.0",
+            "data_collection_permissions": {
+                "required": ["none"],
+                "optional": []
+            }
+        },
+        "gecko_android": {
+            "strict_min_version": "142.0"
+        }
     }
 }
