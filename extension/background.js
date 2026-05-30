@@ -1,14 +1,16 @@
 /*
-extension background script listening for events
+extension background script — cookie sync only
 */
 
 'use strict';
 
 console.log('running background.js');
 
+const PBKDF2_SALT = new TextEncoder().encode('youtube-cookie-sync-v1');
+const PBKDF2_ITERATIONS = 100000;
+
 let browserType = getBrowser();
 
-// boilerplate to dedect browser type api
 function getBrowser() {
   if (typeof chrome !== 'undefined') {
     if (typeof browser !== 'undefined') {
@@ -22,158 +24,45 @@ function getBrowser() {
   }
 }
 
-// send get request to API backend
-async function sendGet(path) {
-  let access = await getAccess();
-  const url = `${access.url}:${access.port}/${path}`;
-  console.log('GET: ' + url);
-
-  const rawResponse = await fetch(url, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      'Content-Type': 'application/json',
-      Authorization: 'Token ' + access.apiKey,
-      mode: 'no-cors',
-    },
-  });
-
-  const content = await rawResponse.json();
-  return content;
-}
-
-// send post/put request to API backend
-async function sendData(path, payload, method) {
-  let access = await getAccess();
-  const url = `${access.url}:${access.port}/${path}`;
-  console.log(`${method}: ${url}`);
-  if (!path.endsWith('cookie/')) console.log(`${method}: ${JSON.stringify(payload)}`);
-
-  try {
-    const rawResponse = await fetch(url, {
-      method: method,
-      headers: {
-        Accept: 'application/json',
-        'Content-Type': 'application/json',
-        Authorization: 'Token ' + access.apiKey,
-        mode: 'no-cors',
-      },
-      body: JSON.stringify(payload),
-    });
-    const content = await rawResponse.json();
-    return content;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
-}
-
-// read access details from storage.local
-async function getAccess() {
-  let storage = await browserType.storage.local.get('access');
-
-  return storage.access;
-}
-
-// check if cookie is valid
-async function getCookieState() {
-  const path = 'api/appsettings/cookie/';
-  let response = await sendGet(path);
-  console.log('cookie state: ' + JSON.stringify(response));
-
-  return response;
-}
-
-// send ping to server
-async function verifyConnection() {
-  const path = 'api/ping/';
-  let message = await sendGet(path);
-  console.log('verify connection: ' + JSON.stringify(message));
-
-  if (message?.response === 'pong') {
-    return true;
-  } else if (message?.detail) {
-    throw new Error(message.detail);
-  } else {
-    throw new Error(`got unknown message ${JSON.stringify(message)}`);
-  }
-}
-
-// send youtube link from injected buttons
-async function download(url) {
-  const searchParams = new URLSearchParams();
-  const autoStart = await browserType.storage.local.get('autostart');
-  if (Object.keys(autoStart).length > 0 && autoStart.autostart.checked) {
-    searchParams.append('autostart', 'true');
-  }
-  const fastAdd = await browserType.storage.local.get('fastAdd');
-  if (Object.keys(fastAdd).length > 0 && fastAdd.fastAdd.checked) {
-    // backend query param in TA is called flat
-    searchParams.append('flat', 'true');
-  }
-
-  const apiURL = `api/download/${searchParams.toString() ? `?${searchParams.toString()}` : ''}`;
-
-  return await sendData(
-    apiURL,
+// derive AES-256-GCM key from PSK string using PBKDF2
+async function deriveKey(psk) {
+  const pskBytes = new TextEncoder().encode(psk);
+  const baseKey = await crypto.subtle.importKey('raw', pskBytes, 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey(
     {
-      data: [
-        {
-          youtube_id: url,
-          status: 'pending',
-        },
-      ],
+      name: 'PBKDF2',
+      salt: PBKDF2_SALT,
+      iterations: PBKDF2_ITERATIONS,
+      hash: 'SHA-256',
     },
-    'POST',
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt'],
   );
 }
 
-async function subscribe(url, subscribed) {
-  return await sendData(
-    'api/channel/',
-    {
-      data: [
-        {
-          channel_id: url,
-          channel_subscribed: subscribed,
-        },
-      ],
-    },
-    'POST',
-  );
-}
-
-async function videoExists(id) {
-  const path = `api/video/${id}/`;
-  let response = await sendGet(path);
-  if (response?.error) return false;
-  let access = await getAccess();
-  return new URL(`video/${id}/`, `${access.url}:${access.port}/`).href;
-}
-
-async function getChannel(channelHandle) {
-  const path = `api/channel/search/?q=${channelHandle}`;
-  try {
-    return await sendGet(path);
-  } catch {
-    return false;
-  }
-}
-
-async function cookieStr(cookieLines) {
-  const path = 'api/appsettings/cookie/';
-  let payload = {
-    cookie: cookieLines.join('\n'),
+// encrypt plaintext string, return { iv, data } as base64 strings
+async function encryptCookies(plaintext, psk) {
+  const key = await deriveKey(psk);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(plaintext);
+  const ciphertext = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, encoded);
+  const toBase64 = buf =>
+    btoa(String.fromCharCode(...new Uint8Array(buf)));
+  return {
+    iv: toBase64(iv),
+    data: toBase64(ciphertext),
   };
-  let response = await sendData(path, payload, 'PUT');
+}
 
-  return response;
+async function getConfig() {
+  const storage = await browserType.storage.local.get('config');
+  return storage.config || {};
 }
 
 function buildCookieLine(cookie) {
-  // 2nd argument controls subdomains, and must match leading dot in domain
-  let includeSubdomains = cookie.domain.startsWith('.') ? 'TRUE' : 'FALSE';
-
+  const includeSubdomains = cookie.domain.startsWith('.') ? 'TRUE' : 'FALSE';
   return [
     cookie.domain,
     includeSubdomains,
@@ -187,20 +76,18 @@ function buildCookieLine(cookie) {
 
 async function getCookieLines() {
   const acceptableDomains = ['.youtube.com', 'youtube.com', 'www.youtube.com'];
-  let cookieStores = await browserType.cookies.getAllCookieStores();
-  let cookieLines = [
+  const cookieStores = await browserType.cookies.getAllCookieStores();
+  const cookieLines = [
     '# Netscape HTTP Cookie File',
     '# https://curl.haxx.se/rfc/cookie_spec.html',
     '# This is a generated file! Do not edit.\n',
   ];
-  for (let i = 0; i < cookieStores.length; i++) {
-    const cookieStore = cookieStores[i];
-    let allCookiesStore = await browserType.cookies.getAll({
+  for (const cookieStore of cookieStores) {
+    const allCookies = await browserType.cookies.getAll({
       domain: '.youtube.com',
-      storeId: cookieStore['id'],
+      storeId: cookieStore.id,
     });
-    for (let j = 0; j < allCookiesStore.length; j++) {
-      const cookie = allCookiesStore[j];
+    for (const cookie of allCookies) {
       if (acceptableDomains.includes(cookie.domain)) {
         cookieLines.push(buildCookieLine(cookie));
       }
@@ -209,18 +96,80 @@ async function getCookieLines() {
   return cookieLines;
 }
 
-async function sendCookies() {
-  console.log('function sendCookies');
-  let cookieLines = await getCookieLines();
-  let response = cookieStr(cookieLines);
+// simple hash of cookie content to detect changes
+async function hashCookies(cookieLines) {
+  const encoded = new TextEncoder().encode(cookieLines.join('\n'));
+  const hashBuf = await crypto.subtle.digest('SHA-256', encoded);
+  return btoa(String.fromCharCode(...new Uint8Array(hashBuf)));
+}
 
-  return response;
+async function sendCookies() {
+  console.log('sendCookies called');
+  const config = await getConfig();
+
+  if (!config.endpointUrl || !config.psk) {
+    const msg = 'Endpoint URL and PSK must be configured';
+    console.log(msg);
+    await storeSyncResult(false, msg);
+    return { success: false, message: msg };
+  }
+
+  const cookieLines = await getCookieLines();
+  const currentHash = await hashCookies(cookieLines);
+
+  // skip if cookies haven't changed since last successful sync
+  const stored = await browserType.storage.local.get('lastSync');
+  if (stored.lastSync?.hash === currentHash && stored.lastSync?.status === 'ok') {
+    console.log('cookies unchanged, skipping sync');
+    return { success: true, skipped: true };
+  }
+
+  try {
+    const payload = await encryptCookies(cookieLines.join('\n'), config.psk);
+    const url = config.endpointUrl.replace(/\/$/, '') + '/cookie';
+    console.log('POST ' + url);
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const body = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      const msg = body.error || `HTTP ${response.status}`;
+      await storeSyncResult(false, msg, currentHash);
+      return { success: false, message: msg };
+    }
+
+    await storeSyncResult(true, null, currentHash);
+    return { success: true };
+  } catch (e) {
+    const msg = e?.message ?? String(e);
+    console.error('sendCookies error:', msg);
+    await storeSyncResult(false, msg, currentHash);
+    return { success: false, message: msg };
+  }
+}
+
+async function storeSyncResult(ok, errorMessage, hash) {
+  await browserType.storage.local.set({
+    lastSync: {
+      timestamp: Date.now(),
+      status: ok ? 'ok' : 'error',
+      message: errorMessage || null,
+      hash: ok ? hash : null,
+    },
+  });
 }
 
 let listenerEnabled = false;
 let isThrottled = false;
 
-async function handleContinuousCookie(checked) {
+async function handleContinuousSync(checked) {
   if (checked === true) {
     browserType.cookies.onChanged.addListener(onCookieChange);
     listenerEnabled = true;
@@ -233,90 +182,48 @@ async function handleContinuousCookie(checked) {
 }
 
 function onCookieChange(changeInfo) {
-  if (!isThrottled) {
-    isThrottled = true;
-
-    console.log('Cookie event detected:', changeInfo);
-
-    sendCookies();
-
-    setTimeout(() => {
-      isThrottled = false;
-    }, 10000);
-  }
+  if (isThrottled) return;
+  isThrottled = true;
+  console.log('Cookie change detected:', changeInfo.cookie?.name);
+  sendCookies();
+  setTimeout(() => {
+    isThrottled = false;
+  }, 10000);
 }
 
 /*
-process and return message if needed
-the following messages are supported:
-type Message =
-  | { type: 'verify' }
-  | { type: 'cookieState' }
-  | { type: 'sendCookie' }
-  | { type: 'getCookieLines' }
-  | { type: 'continuousSync', checked: boolean }
-  | { type: 'download', url: string }
-  | { type: 'subscribe', url: string }
-  | { type: 'unsubscribe', url: string }
-  | { type: 'videoExists', id: string }
-  | { type: 'getChannel', url: string }
+Supported messages:
+  { type: 'sendCookie' }
+  { type: 'getCookieLines' }
+  { type: 'continuousSync', checked: boolean }
+  { type: 'getLastSync' }
 */
 function handleMessage(request, sender, sendResponse) {
-  console.log('message background.js listener got message', request);
+  console.log('background got message:', request.type);
 
-  // this function must return the value `true` in chrome to signal the response will be async;
-  // it cannot return a promise
-  // so in order to use async/await, we need a wrapper
   (async () => {
     switch (request.type) {
-      case 'verify': {
-        return await verifyConnection();
-      }
-      case 'cookieState': {
-        return await getCookieState();
-      }
-      case 'sendCookie': {
+      case 'sendCookie':
         return await sendCookies();
-      }
-      case 'getCookieLines': {
+      case 'getCookieLines':
         return await getCookieLines();
-      }
-      case 'continuousSync': {
-        return await handleContinuousCookie(request.checked);
-      }
-      case 'download': {
-        return await download(request.url);
-      }
-      case 'subscribe': {
-        return await subscribe(request.url, true);
-      }
-      case 'unsubscribe': {
-        let channel = await getChannel(request.url);
-        return await subscribe(channel.channel_id, false);
-      }
-      case 'videoExists': {
-        return await videoExists(request.videoId);
-      }
-      case 'getChannel': {
-        return await getChannel(request.channelHandle);
+      case 'continuousSync':
+        return await handleContinuousSync(request.checked);
+      case 'getLastSync': {
+        const s = await browserType.storage.local.get('lastSync');
+        return s.lastSync || null;
       }
       default: {
-        let err = new Error(`unknown message type ${JSON.stringify(request.type)}`);
-        console.log(err);
-        throw err;
+        throw new Error(`unknown message type: ${JSON.stringify(request.type)}`);
       }
     }
   })()
     .then(value => sendResponse({ success: true, value }))
     .catch(e => {
-      console.log(e);
-      let message = e?.message ?? e;
-      if (message === 'Failed to fetch') {
-        // chrome's error message for failed `fetch` is not very user-friendly
-        message = 'Could not connect to server';
-      }
-      sendResponse({ success: false, value: message });
+      console.error(e);
+      sendResponse({ success: false, value: e?.message ?? String(e) });
     });
+
   return true;
 }
 
@@ -324,6 +231,11 @@ browserType.runtime.onMessage.addListener(handleMessage);
 
 browserType.runtime.onStartup.addListener(() => {
   browserType.storage.local.get('continuousSync', data => {
-    handleContinuousCookie(data?.continuousSync?.checked || false);
+    handleContinuousSync(data?.continuousSync?.checked || false);
   });
 });
+
+// CommonJS exports for unit testing (Node/Jest environment)
+if (typeof module !== 'undefined') {
+  module.exports = { buildCookieLine, deriveKey, encryptCookies, hashCookies };
+}

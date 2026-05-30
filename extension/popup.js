@@ -6,7 +6,6 @@ Loaded into popup index.html
 
 let browserType = getBrowser();
 
-// boilerplate to dedect browser type api
 function getBrowser() {
   if (typeof chrome !== 'undefined') {
     if (typeof browser !== 'undefined') {
@@ -21,310 +20,149 @@ function getBrowser() {
 }
 
 async function sendMessage(message) {
-  let { success, value } = await browserType.runtime.sendMessage(message);
-  if (!success) {
-    throw value;
-  }
+  const { success, value } = await browserType.runtime.sendMessage(message);
+  if (!success) throw value;
   return value;
 }
 
-let errorOut = document.getElementById('error-out');
+const errorOut = document.getElementById('error-out');
 function setError(message) {
   errorOut.style.display = 'initial';
   errorOut.innerText = message;
 }
-
 function clearError() {
   errorOut.style.display = 'none';
 }
 
-function clearTempLocalStorage() {
-  browserType.storage.local.remove('popupApiKey');
-  browserType.storage.local.remove('popupFullUrl');
+const syncErrorEl = document.getElementById('sync-error');
+function setSyncError(message) {
+  syncErrorEl.style.display = 'block';
+  syncErrorEl.innerText = message;
+}
+function clearSyncError() {
+  syncErrorEl.style.display = 'none';
+  syncErrorEl.innerText = '';
 }
 
-// store access details
-document.getElementById('save-login').addEventListener('click', function () {
-  let url = document.getElementById('full-url').value;
-  if (!url.includes('://')) {
-    url = 'http://' + url;
+function formatTimestamp(ts) {
+  if (!ts) return '—';
+  return new Date(ts).toLocaleString();
+}
+
+function updateSyncStatus(lastSync) {
+  const el = document.getElementById('sync-status');
+  if (!lastSync) {
+    el.innerText = '—';
+    clearSyncError();
+    return;
   }
-  try {
-    clearError();
-    let parsed = new URL(url);
-    let toStore = {
-      access: {
-        url: `${parsed.protocol}//${parsed.hostname}`,
-        port: parsed.port || (parsed.protocol === 'https:' ? '443' : '80'),
-        apiKey: document.getElementById('api-key').value,
-      },
-    };
-    browserType.storage.local.set(toStore, function () {
-      console.log('Stored connection details: ' + JSON.stringify(toStore));
-      pingBackend();
-    });
-  } catch (e) {
-    setError(e.message);
+  if (lastSync.status === 'ok') {
+    el.innerText = formatTimestamp(lastSync.timestamp);
+    clearSyncError();
+  } else {
+    el.innerText = formatTimestamp(lastSync.timestamp) + ' — failed';
+    setSyncError(lastSync.message || 'Unknown error');
   }
-});
+}
 
-// verify connection status
-document.getElementById('status-icon').addEventListener('click', function () {
-  pingBackend();
-});
+// generate a random 32-char hex PSK
+function generatePsk() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
-// send cookie
-document.getElementById('sendCookies').addEventListener('click', function () {
-  sendCookie();
-});
-
-// show cookies
-document.getElementById('showCookies').addEventListener('click', function () {
-  showCookies();
-});
-
-// continuous sync
-document.getElementById('continuous-sync').addEventListener('click', function () {
-  toggleContinuousSync();
-});
-
-// autostart
-document.getElementById('autostart').addEventListener('click', function () {
-  toggleAutostart();
-});
-
-// fast add
-document.getElementById('fastAdd').addEventListener('click', function () {
-  toggleFastAdd();
-});
-
-let fullUrlInput = document.getElementById('full-url');
-fullUrlInput.addEventListener('change', () => {
-  browserType.storage.local.set({
-    popupFullUrl: fullUrlInput.value,
-  });
-});
-
-let apiKeyInput = document.getElementById('api-key');
-apiKeyInput.addEventListener('change', () => {
-  browserType.storage.local.set({
-    popupApiKey: apiKeyInput.value,
-  });
-});
-
-function sendCookie() {
-  console.log('popup send cookie');
+// save config
+document.getElementById('save-config').addEventListener('click', () => {
   clearError();
+  const endpointUrl = document.getElementById('endpoint-url').value.trim();
+  const psk = document.getElementById('psk').value.trim();
 
-  function handleResponse(message) {
-    console.log('handle cookie response: ' + JSON.stringify(message));
-    let validattionMessage = `enabled, last verified ${message.validated_str}`;
-    document.getElementById('sendCookiesStatus').innerText = validattionMessage;
+  if (!endpointUrl) {
+    setError('Endpoint URL is required');
+    return;
+  }
+  if (!psk) {
+    setError('PSK is required');
+    return;
   }
 
-  function handleError(error) {
-    console.log(`Error: ${error}`);
-    setError(error);
-  }
+  browserType.storage.local.set({ config: { endpointUrl, psk } }, () => {
+    console.log('Config saved');
+  });
+});
 
-  let sending = sendMessage({ type: 'sendCookie' });
-  sending.then(handleResponse, handleError);
-}
+// generate PSK button
+document.getElementById('generate-psk').addEventListener('click', () => {
+  document.getElementById('psk').value = generatePsk();
+  document.getElementById('psk').type = 'text';
+  setTimeout(() => {
+    document.getElementById('psk').type = 'password';
+  }, 3000);
+});
 
-function showCookies() {
-  console.log('popup show cookies');
+// sync now
+document.getElementById('sendCookies').addEventListener('click', () => {
+  clearError();
+  clearSyncError();
+  document.getElementById('sync-status').innerText = 'Syncing…';
+
+  sendMessage({ type: 'sendCookie' })
+    .then(result => {
+      sendMessage({ type: 'getLastSync' }).then(updateSyncStatus);
+      if (!result?.success && result?.message) {
+        setSyncError(result.message);
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      setError(String(err));
+      sendMessage({ type: 'getLastSync' }).then(updateSyncStatus);
+    });
+});
+
+// show/hide raw cookies
+document.getElementById('showCookies').addEventListener('click', () => {
   const textArea = document.getElementById('cookieLinesResponse');
-
-  function handleResponse(message) {
-    textArea.value = message.join('\n');
-    textArea.style.display = 'initial';
-  }
-  function handleError(error) {
-    console.log(`Error: ${error}`);
-  }
-
   if (textArea.value) {
     textArea.value = '';
     textArea.style.display = 'none';
-    document.getElementById('showCookies').textContent = 'Show Cookie';
+    document.getElementById('showCookies').textContent = 'Show Cookies';
   } else {
-    let sending = sendMessage({ type: 'getCookieLines' });
-    sending.then(handleResponse, handleError);
-    document.getElementById('showCookies').textContent = 'Hide Cookie';
+    sendMessage({ type: 'getCookieLines' })
+      .then(lines => {
+        textArea.value = lines.join('\n');
+        textArea.style.display = 'block';
+        document.getElementById('showCookies').textContent = 'Hide Cookies';
+      })
+      .catch(err => setError(String(err)));
   }
-}
+});
 
-function toggleContinuousSync() {
+// continuous sync toggle
+document.getElementById('continuous-sync').addEventListener('click', () => {
   const checked = document.getElementById('continuous-sync').checked;
-  let toStore = {
-    continuousSync: {
-      checked: checked,
-    },
-  };
-  browserType.storage.local.set(toStore, function () {
-    console.log('stored option: ' + JSON.stringify(toStore));
+  browserType.storage.local.set({ continuousSync: { checked } }, () => {
+    console.log('continuousSync set to', checked);
   });
-  sendMessage({ type: 'continuousSync', checked });
-}
+  sendMessage({ type: 'continuousSync', checked }).catch(err => setError(String(err)));
+});
 
-function toggleAutostart() {
-  let checked = document.getElementById('autostart').checked;
-  let toStore = {
-    autostart: {
-      checked: checked,
-    },
-  };
-  browserType.storage.local.set(toStore, function () {
-    console.log('stored option: ' + JSON.stringify(toStore));
-  });
-}
-
-function toggleFastAdd() {
-  let checked = document.getElementById('fastAdd').checked;
-  let toStore = {
-    fastAdd: {
-      checked: checked,
-    },
-  };
-  browserType.storage.local.set(toStore, function () {
-    console.log('stored option: ' + JSON.stringify(toStore));
-  });
-}
-
-// send ping message to TA backend
-async function pingBackend() {
-  clearError();
-  clearTempLocalStorage();
-  function handleResponse() {
-    console.log('connection validated');
-    setStatusIcon(true);
-  }
-
-  function handleError(error) {
-    console.log(`Verify got error: ${error}`);
-    setStatusIcon(false);
-    setError(error);
-  }
-
-  console.log('ping TA server');
-  let sending = sendMessage({ type: 'verify' });
-  sending.then(handleResponse, handleError);
-}
-
-// add url to image
-function addUrl(access) {
-  const url = `${access.url}:${access.port}`;
-  document.getElementById('ta-url').setAttribute('href', url);
-}
-
-function setCookieState() {
-  clearError();
-  function handleResponse(message) {
-    console.log(message);
-    if (!message.cookie_enabled) {
-      document.getElementById('sendCookiesStatus').innerText = 'disabled';
+// on load: populate fields and status
+document.addEventListener('DOMContentLoaded', () => {
+  browserType.storage.local.get(['config', 'continuousSync', 'lastSync'], result => {
+    if (result.config) {
+      document.getElementById('endpoint-url').value = result.config.endpointUrl || '';
+      document.getElementById('psk').value = result.config.psk || '';
     } else {
-      let validattionMessage = 'enabled';
-      if (message.validated_str) {
-        validattionMessage += `, last verified ${message.validated_str}`;
-      }
-      document.getElementById('sendCookiesStatus').innerText = validattionMessage;
+      // auto-generate a PSK on first open if none configured
+      document.getElementById('psk').value = generatePsk();
     }
-  }
 
-  function handleError(error) {
-    console.log(`Error: ${error}`);
-    setError(error);
-  }
-
-  console.log('set cookie state');
-  let sending = sendMessage({ type: 'cookieState' });
-  sending.then(handleResponse, handleError);
-  document.getElementById('sendCookies').checked = true;
-}
-
-// change status icon based on connection status
-function setStatusIcon(connected) {
-  let statusIcon = document.getElementById('status-icon');
-  if (connected) {
-    statusIcon.innerHTML = '&#9745;';
-    statusIcon.style.color = 'green';
-  } else {
-    statusIcon.innerHTML = '&#9746;';
-    statusIcon.style.color = 'red';
-  }
-}
-
-// fill in form
-document.addEventListener('DOMContentLoaded', async () => {
-  async function onGot(item) {
-    if (!item.access) {
-      console.log('no access details found');
-      if (item.popupFullUrl != null && fullUrlInput.value === '') {
-        fullUrlInput.value = item.popupFullUrl;
-      }
-      if (item.popupApiKey != null && apiKeyInput.value === '') {
-        apiKeyInput.value = item.popupApiKey;
-      }
-      setStatusIcon(false);
-      return;
+    if (result.continuousSync?.checked) {
+      document.getElementById('continuous-sync').checked = true;
     }
-    let { url, port } = item.access;
-    let fullUrl = url;
-    if (!(url.startsWith('http://') && port === '80')) {
-      fullUrl += `:${port}`;
-    }
-    document.getElementById('full-url').value = fullUrl;
-    document.getElementById('api-key').value = item.access.apiKey;
-    pingBackend();
-    addUrl(item.access);
-    setCookieState();
-  }
 
-  async function setContinuousCookiesOptions(result) {
-    if (!result.continuousSync || result.continuousSync.checked === false) {
-      console.log('continuous cookie sync not set');
-      return;
-    }
-    console.log('set options: ' + JSON.stringify(result));
-    document.getElementById('continuous-sync').checked = true;
-  }
-
-  async function setAutostartOption(result) {
-    console.log(result);
-    if (!result.autostart || result.autostart.checked === false) {
-      console.log('autostart not set');
-      return;
-    }
-    console.log('set options: ' + JSON.stringify(result));
-    document.getElementById('autostart').checked = true;
-  }
-
-  async function setFastAddOption(result) {
-    console.log(result);
-    if (!result.fastAdd || result.fastAdd.checked === false) {
-      console.log('fast add not set');
-      return;
-    }
-    console.log('set options: ' + JSON.stringify(result));
-    document.getElementById('fastAdd').checked = true;
-  }
-
-  browserType.storage.local.get(
-    ['access', 'popupFullUrl', 'popupApiKey', 'fastAdd'],
-    function (result) {
-      onGot(result);
-    },
-  );
-
-  browserType.storage.local.get('continuousSync', function (result) {
-    setContinuousCookiesOptions(result);
-  });
-
-  browserType.storage.local.get('autostart', function (result) {
-    setAutostartOption(result);
-  });
-  browserType.storage.local.get('fastAdd', function (result) {
-    setFastAddOption(result);
+    updateSyncStatus(result.lastSync || null);
   });
 });

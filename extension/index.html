@@ -4,70 +4,49 @@
     <meta charset="UTF-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TubeArchivist Companion</title>
+    <title>YouTube Cookie Sync</title>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Sen" type="text/css">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="container">
         <div class="logo">
-            <a href="#" id="ta-url" target="_blank">
-                <img src="/images/logo.png" alt="ta-logo">
-            </a>
-            <span>v0.5.0</span>
+            <img src="/images/icon128.png" alt="logo">
+            <span class="title">YouTube Cookie Sync</span>
         </div>
         <hr>
         <form class="login-form">
-            <label for="full-url">Tube Archivist URL:</label>
-            <input type="text" id="full-url" name="url">
-            <label for="api-key">Tube Archivist API Key:</label>
-            <input type="password" id="api-key" name="api-key">
+            <label for="endpoint-url">Endpoint URL:</label>
+            <input type="text" id="endpoint-url" name="endpoint-url" placeholder="http://localhost:8080">
+            <label for="psk">Pre-Shared Key:</label>
+            <input type="password" id="psk" name="psk">
         </form>
         <div class="submit">
-            <button id="save-login">Save</button><span id="status-icon">&#9744;</span>
+            <button id="save-config">Save</button>
+            <button id="generate-psk">Generate PSK</button>
         </div>
         <div id="error-out"></div>
         <hr>
-        <p>Cookies:</p>
         <div class="options">
-            <div>
-                <p>TA cookies: <span id="sendCookiesStatus" /></p>
+            <div class="sync-status">
+                <span>Last sync: </span><span id="sync-status">—</span>
             </div>
+            <div id="sync-error" class="sync-error"></div>
             <div>
                 <input type="checkbox" id="continuous-sync" name="continuous-sync">
-                <span>Continuous Cookie Sync</span>
+                <span>Continuous Sync</span>
             </div>
-            <button id="sendCookies">Copy Now</button>
-            <button id="showCookies">Show Cookie</button><br>
+            <div class="buttons">
+                <button id="sendCookies">Sync Now</button>
+                <button id="showCookies">Show Cookies</button>
+            </div>
             <textarea id="cookieLinesResponse" readonly></textarea>
-        </div>
-        <p>Download:</p>
-        <div class="options">
-            <div>
-                <input type="checkbox" id="autostart" name="autostart">
-                <span>Autostart</span>
-            </div>
-            <div>
-                <input type="checkbox" id="fastAdd" name="fastAdd" >
-                <span>Fast Add</span>
-            </div>
         </div>
         <hr>
         <div class="icons">
-            <div>
-                <a href="https://www.reddit.com/r/TubeArchivist/" target="_blank">
-                    <img src="/images/social/reddit.svg" alt="reddit-icon"></a>
-                <a href="https://www.tubearchivist.com/discord" target="_blank">
-                    <img src="/images/social/discord.svg" alt="discord-icon"></a>
-                <a href="https://github.com/tubearchivist/browser-extension/" target="_blank">
-                    <img src="/images/social/github.svg" alt="github-icon">
-                </a>
-            </div>
-            <div>
-                <a href="https://github.com/tubearchivist/browser-extension/issues">
-                    <img src="/images/question.svg" alt="question-icon">
-                </a>
-            </div>
+            <a href="https://github.com/tubearchivist/browser-extension/" target="_blank">
+                <img src="/images/social/github.svg" alt="github-icon">
+            </a>
         </div>
     </div>
     <script type="text/javascript" src="popup.js"></script>
