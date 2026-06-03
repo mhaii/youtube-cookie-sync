@@ -16,6 +16,12 @@ import (
 	"crypto/sha256"
 )
 
+// set via -ldflags at build time
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
 const (
 	pbkdf2Salt       = "youtube-cookie-sync-v1"
 	pbkdf2Iterations = 100000
@@ -129,6 +135,8 @@ func handleCookie(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	log.Printf("cookie-sync version=%s commit=%s", version, commit)
+
 	psk := os.Getenv("PSK")
 	if psk == "" {
 		log.Fatal("ERROR: PSK environment variable is required")

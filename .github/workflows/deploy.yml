@@ -63,6 +63,9 @@ jobs:
           push: true
           tags: ${{ steps.tags.outputs.tags }}
           platforms: ${{ github.event_name == 'release' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          build-args: |
+            VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || 'edge' }}
+            COMMIT=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
