@@ -17,7 +17,7 @@ Sync happens automatically whenever cookies change (throttled to once per 10s), 
 
 ### Install
 
-- Firefox: [Firefox Add-ons](#) *(link once published)*
+- Firefox: [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/youtube-cookie-sync/)
 - Chrome: [Chrome Web Store](#) *(link once published)*
 
 ### Setup
@@ -70,7 +70,7 @@ docker run -d \
   -e COOKIE_FILE=/data/cookies.txt \
   -p 8080:8080 \
   -v /path/to/data:/data \
-  ghcr.io/<owner>/youtube-cookie-sync:latest
+  ghcr.io/mhaii/youtube-cookie-sync:latest
 ```
 
 ### Environment variables
