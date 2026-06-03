@@ -208,6 +208,18 @@ func TestHTTPHandlerWrongMethod(t *testing.T) {
 	}
 }
 
+func TestHTTPHandlerPreflight(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/cookie", nil)
+	rr := httptest.NewRecorder()
+	handleCookie(rr, req)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+	if rr.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("expected CORS header on preflight")
+	}
+}
+
 func TestHTTPHandlerInvalidJSON(t *testing.T) {
 	derivedKey = deriveKey("any-psk")
 	req := httptest.NewRequest(http.MethodPost, "/cookie", bytes.NewBufferString("{bad json}"))
