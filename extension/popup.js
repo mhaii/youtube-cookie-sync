@@ -96,12 +96,15 @@ document.getElementById('save-config').addEventListener('click', () => {
 
 // generate PSK button
 document.getElementById('generate-psk').addEventListener('click', () => {
-  document.getElementById('psk').value = generatePsk();
-  document.getElementById('psk').type = 'text';
-  setTimeout(() => {
-    document.getElementById('psk').type = 'password';
-  }, 3000);
+  const pskEl = document.getElementById('psk');
+  pskEl.value = generatePsk();
+  pskEl.focus();
 });
+
+// reveal PSK on focus, hide on blur
+const pskEl = document.getElementById('psk');
+pskEl.addEventListener('focus', () => (pskEl.type = 'text'));
+pskEl.addEventListener('blur', () => (pskEl.type = 'password'));
 
 // sync now
 document.getElementById('sendCookies').addEventListener('click', () => {
