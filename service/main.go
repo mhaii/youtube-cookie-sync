@@ -166,6 +166,10 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/cookie", handleCookie)
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"service":"youtube-cookie-sync","version":%q,"commit":%q}`+"\n", version, commit)
+	})
 
 	log.Printf("cookie-sync-service listening on http://%s", addr)
 	log.Printf("writing cookies to %s", cookieFile)
